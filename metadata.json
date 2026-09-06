@@ -1,0 +1,10 @@
+{
+  "uuid": "gnauthenticator@cbjartli.local",
+  "name": "GNAuthenticator",
+  "description": "Quick-access TOTP 2FA codes from the GNOME top panel. Press the panel icon or a shortcut to open an overlay listing all your accounts, click one to copy its current code.",
+  "shell-version": ["48", "49", "50"],
+  "url": "https://github.com/cbjartli/gnauthenticator",
+  "version-name": "0.1.0",
+  "settings-schema": "org.gnome.shell.extensions.gnauthenticator",
+  "gettext-domain": "gnauthenticator"
+}

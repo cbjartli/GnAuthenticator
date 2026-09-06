@@ -1,0 +1,44 @@
+.gnauth-item {
+    spacing: 12px;
+}
+
+.gnauth-item-text {
+    min-width: 140px;
+}
+
+.gnauth-item-title {
+    font-weight: bold;
+}
+
+.gnauth-item-subtitle {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+.gnauth-item-code {
+    font-family: monospace;
+    font-size: 1.15em;
+    font-weight: bold;
+    padding: 0 8px;
+}
+
+.gnauth-search-item {
+    padding: 6px 10px;
+}
+
+.gnauth-progress-track {
+    width: 36px;
+    height: 4px;
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+}
+
+.gnauth-progress-fill {
+    height: 4px;
+    background-color: #3584e4;
+    border-radius: 2px;
+}
+
+.gnauth-progress-fill-warn {
+    background-color: #e01b24;
+}
