@@ -12,7 +12,22 @@ import { ExtensionPreferences, gettext as _ } from 'resource:///org/gnome/Shell/
 import * as Store from './lib/store.js';
 import * as Otpauth from './lib/otpauth.js';
 import * as Qr from './lib/qr.js';
+import * as GoogleMigration from './lib/googleMigration.js';
 import { base32Decode } from './lib/base32.js';
+
+/**
+ * Parse either a single-account `otpauth://` URI or a Google Authenticator
+ * batch-export `otpauth-migration://offline?data=...` URI into a uniform
+ * batch shape, so callers don't need to care which one they got.
+ * @returns {{ accounts: Array<{meta: object, secretBase32: string}>, total: number, skippedHotp: number, skippedUnsupportedAlgorithm: number }}
+ */
+function parseAnyOtpUri(uriText) {
+    if (GoogleMigration.isMigrationUri(uriText))
+        return GoogleMigration.parseMigrationUri(uriText);
+
+    const { meta, secretBase32 } = Otpauth.parseOtpauthUri(uriText);
+    return { accounts: [{ meta, secretBase32 }], total: 1, skippedHotp: 0, skippedUnsupportedAlgorithm: 0 };
+}
 
 /** Dialog for adding a new account via manual entry, otpauth:// URI, or a QR code image file. */
 const AddAccountDialog = GObject.registerClass(
@@ -117,7 +132,7 @@ class AddAccountDialog extends Adw.Window {
         const page = new Adw.PreferencesPage();
         const group = new Adw.PreferencesGroup({
             title: _('otpauth:// URI'),
-            description: _('Paste a full otpauth://totp/... URI, e.g. exported from another authenticator app.'),
+            description: _('Paste a full otpauth://totp/... URI (e.g. exported from another authenticator app), or a Google Authenticator batch export URI (otpauth-migration://offline?data=...) to import multiple accounts at once.'),
         });
         page.add(group);
 
@@ -125,17 +140,15 @@ class AddAccountDialog extends Adw.Window {
         group.add(this._uriRow);
 
         const button = new Gtk.Button({
-            label: _('Add Account'),
+            label: _('Add Account(s)'),
             css_classes: ['suggested-action'],
             halign: Gtk.Align.END,
             margin_top: 12,
         });
         button.connect('clicked', () => {
             try {
-                const { meta, secretBase32 } = Otpauth.parseOtpauthUri(this._uriRow.get_text().trim());
-                const added = Store.addAccount(meta, secretBase32);
-                this._onAdded(added);
-                this.close();
+                const batch = parseAnyOtpUri(this._uriRow.get_text().trim());
+                this._importBatch(batch);
             } catch (e) {
                 this._showError(e.message);
             }
@@ -149,40 +162,88 @@ class AddAccountDialog extends Adw.Window {
         const page = new Adw.PreferencesPage();
         const group = new Adw.PreferencesGroup({
             title: _('QR Code Image'),
-            description: _('Pick an image file (screenshot or exported PNG) containing a single otpauth QR code. Requires the "zbar" package.'),
+            description: _('Pick one or more image files (screenshots or exported PNGs) containing otpauth QR codes — including Google Authenticator\'s "Export accounts" batch QR codes (select all of them at once if it split your accounts across several). Requires the "zbar" package.'),
         });
         page.add(group);
 
         const pickButton = new Gtk.Button({
-            label: _('Choose Image…'),
+            label: _('Choose Image(s)…'),
             halign: Gtk.Align.START,
         });
         group.add(pickButton);
 
         pickButton.connect('clicked', () => {
-            const chooser = new Gtk.FileDialog({ title: _('Select QR Code Image') });
-            chooser.open(this, null, (dlg, res) => {
-                let file;
+            const chooser = new Gtk.FileDialog({ title: _('Select QR Code Image(s)') });
+            chooser.open_multiple(this, null, (dlg, res) => {
+                let files;
                 try {
-                    file = dlg.open_finish(res);
+                    const model = dlg.open_multiple_finish(res);
+                    files = [];
+                    for (let i = 0; i < model.get_n_items(); i++)
+                        files.push(model.get_item(i));
                 } catch (e) {
                     return; // cancelled
                 }
-                const path = file.get_path();
-                Qr.decodeQrFromFile(path).then(uriText => {
-                    try {
-                        const { meta, secretBase32 } = Otpauth.parseOtpauthUri(uriText);
-                        const added = Store.addAccount(meta, secretBase32);
-                        this._onAdded(added);
-                        this.close();
-                    } catch (e) {
-                        this._showError(e.message);
-                    }
-                }).catch(e => this._showError(e.message));
+                if (files.length === 0)
+                    return;
+
+                Promise.all(files.map(file => Qr.decodeQrFromFile(file.get_path())))
+                    .then(uriTexts => {
+                        // Merge every scanned QR code's accounts into one batch —
+                        // this transparently supports Google Authenticator
+                        // splitting a large export across multiple QR codes,
+                        // since we don't need their batch bookkeeping fields,
+                        // just the union of all otp_parameters entries.
+                        const merged = { accounts: [], total: 0, skippedHotp: 0, skippedUnsupportedAlgorithm: 0 };
+                        for (const uriText of uriTexts) {
+                            const batch = parseAnyOtpUri(uriText);
+                            merged.accounts.push(...batch.accounts);
+                            merged.total += batch.total;
+                            merged.skippedHotp += batch.skippedHotp;
+                            merged.skippedUnsupportedAlgorithm += batch.skippedUnsupportedAlgorithm;
+                        }
+                        this._importBatch(merged);
+                    })
+                    .catch(e => this._showError(e.message));
             });
         });
 
         return page;
+    }
+
+    /** Add every account in a parsed batch (single or multi-account), then report a summary and close. */
+    _importBatch({ accounts, total, skippedHotp, skippedUnsupportedAlgorithm }) {
+        if (accounts.length === 0 && total === 0) {
+            this._showError(_('No accounts found in that URI.'));
+            return;
+        }
+
+        let lastAdded = null;
+        for (const { meta, secretBase32 } of accounts)
+            lastAdded = Store.addAccount(meta, secretBase32);
+
+        this._onAdded(lastAdded);
+
+        const skippedParts = [];
+        if (skippedHotp > 0)
+            skippedParts.push(_('%d event-based (HOTP) account(s) — not supported').format(skippedHotp));
+        if (skippedUnsupportedAlgorithm > 0)
+            skippedParts.push(_('%d account(s) using an unsupported algorithm (MD5)').format(skippedUnsupportedAlgorithm));
+
+        if (accounts.length > 1 || skippedParts.length > 0) {
+            const lines = [_('Added %d account(s).').format(accounts.length)];
+            if (skippedParts.length > 0)
+                lines.push(_('Skipped: %s.').format(skippedParts.join(', ')));
+            this._showInfo(lines.join(' '));
+        }
+
+        this.close();
+    }
+
+    _showInfo(message) {
+        const dialog = new Adw.AlertDialog({ heading: _('Import Complete'), body: message });
+        dialog.add_response('ok', _('OK'));
+        dialog.present(this);
     }
 
     _showError(message) {
@@ -317,7 +378,7 @@ class GeneralPage extends Adw.PreferencesPage {
     }
 });
 
-export default class GnAuthentictorPreferences extends ExtensionPreferences {
+export default class GnAuthenticatorPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
         window.add(new AccountsPage());

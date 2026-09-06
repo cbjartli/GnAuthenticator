@@ -261,7 +261,7 @@ class Indicator extends PanelMenu.Button {
     }
 });
 
-export default class GnAuthentictorExtension extends Extension {
+export default class GnAuthenticatorExtension extends Extension {
     enable() {
         this._indicator = new Indicator(this);
         Main.panel.addToStatusArea(this.uuid, this._indicator);
