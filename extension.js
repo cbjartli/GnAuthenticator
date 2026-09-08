@@ -26,10 +26,12 @@ const KEYBINDING_NAME = 'toggle-overlay';
 /** A single account row: name/issuer, live code, and a countdown bar. */
 const AccountItem = GObject.registerClass(
   class AccountItem extends PopupMenu.PopupBaseMenuItem {
-    _init(account, onActivate) {
+    _init(account, onActivate, hidden) {
       super._init({ style_class: 'gnauth-item' });
       this._account = account;
       this._onActivateCb = onActivate;
+      this._hidden = hidden;
+      this._lastCode = null;
 
       const textBox = new St.BoxLayout({
         vertical: true,
@@ -83,7 +85,7 @@ const AccountItem = GObject.registerClass(
         period: this._account.period,
       });
       this._lastCode = code;
-      this._codeLabel.set_text(code.match(/.{1,3}/g).join(' '));
+      this._renderCode();
 
       const remaining = Totp.secondsRemaining(this._account.period);
       const fraction = remaining / this._account.period;
@@ -93,6 +95,22 @@ const AccountItem = GObject.registerClass(
         this._progressFill.add_style_class_name('gnauth-progress-fill-warn');
       else
         this._progressFill.remove_style_class_name('gnauth-progress-fill-warn');
+    }
+
+    /** Show masked dots instead of digits, or the real code, per the current hidden state. */
+    _renderCode() {
+      if (!this._lastCode)
+        return;
+      if (this._hidden)
+        this._codeLabel.set_text('•'.repeat(this._lastCode.length).match(/.{1,3}/g).join(' '));
+      else
+        this._codeLabel.set_text(this._lastCode.match(/.{1,3}/g).join(' '));
+    }
+
+    /** Toggle whether this row's code is masked; the underlying code (used for copying) is unaffected. */
+    setHidden(hidden) {
+      this._hidden = hidden;
+      this._renderCode();
     }
 
     setVisibleForQuery(query) {
@@ -122,6 +140,15 @@ const Indicator = GObject.registerClass(
       this._items = [];
       this._tickId = null;
       this._clearClipboardId = null;
+      this._hideCodes = this._settings.get_boolean('hide-codes');
+
+      this._settings.connect('changed::hide-codes', () => {
+        this._hideCodes = this._settings.get_boolean('hide-codes');
+        if (this._eyeButton)
+          this._eyeButton.icon_name = this._hideCodes ? 'view-reveal-symbolic' : 'view-conceal-symbolic';
+        for (const item of this._items)
+          item.setHidden(this._hideCodes);
+      });
 
       this.menu.connect('open-state-changed', (_menu, open) => {
         if (open)
@@ -172,7 +199,7 @@ const Indicator = GObject.registerClass(
       }
 
       for (const account of accounts) {
-        const item = new AccountItem(account, (acct, code) => this._onCopy(acct, code));
+        const item = new AccountItem(account, (acct, code) => this._onCopy(acct, code), this._hideCodes);
         this.menu.addMenuItem(item);
         this._items.push(item);
       }
@@ -223,6 +250,16 @@ const Indicator = GObject.registerClass(
       addButton.connect('clicked', () => this._onAddAccount());
       box.add_child(addButton);
 
+      this._eyeButton = new St.Button({
+        style_class: 'gnauth-toolbar-button icon-button',
+        icon_name: this._hideCodes ? 'view-reveal-symbolic' : 'view-conceal-symbolic',
+        can_focus: true,
+        track_hover: true,
+        accessible_name: _('Hide codes'),
+      });
+      this._eyeButton.connect('clicked', () => this._onToggleHideCodes());
+      box.add_child(this._eyeButton);
+
       const settingsButton = new St.Button({
         style_class: 'gnauth-toolbar-button icon-button',
         icon_name: 'emblem-system-symbolic',
@@ -246,6 +283,10 @@ const Indicator = GObject.registerClass(
     _onOpenSettings() {
       this.menu.close();
       this._extensionObject.openPreferences();
+    }
+
+    _onToggleHideCodes() {
+      this._settings.set_boolean('hide-codes', !this._hideCodes);
     }
 
     _tick() {

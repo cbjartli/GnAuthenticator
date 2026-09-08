@@ -21,5 +21,10 @@
       <summary>Request that preferences open straight to the add-account dialog</summary>
       <description>Set by the panel indicator's "+" button before invoking openPreferences(), since there is no direct argument-passing channel to the separately-spawned preferences process. Reset by the preferences window once handled.</description>
     </key>
+    <key name="hide-codes" type="b">
+      <default>false</default>
+      <summary>Mask codes until revealed</summary>
+      <description>When true, codes are displayed as dots instead of digits (still copyable by clicking) so they aren't visible to someone looking over your shoulder. Toggled via the eye icon in the overlay.</description>
+    </key>
   </schema>
 </schemalist>

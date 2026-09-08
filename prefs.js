@@ -444,6 +444,19 @@ class GeneralPage extends Adw.PreferencesPage {
         });
         group.add(clearRow);
 
+        const hideRow = new Adw.SwitchRow({
+            title: _('Hide codes'),
+            subtitle: _('Mask codes as dots until revealed (also toggleable from the overlay\'s eye icon)'),
+            active: settings.get_boolean('hide-codes'),
+        });
+        hideRow.connect('notify::active', () => {
+            settings.set_boolean('hide-codes', hideRow.active);
+        });
+        settings.connect('changed::hide-codes', () => {
+            hideRow.active = settings.get_boolean('hide-codes');
+        });
+        group.add(hideRow);
+
         const shortcutGroup = new Adw.PreferencesGroup({ title: _('Keyboard Shortcut') });
         this.add(shortcutGroup);
 
