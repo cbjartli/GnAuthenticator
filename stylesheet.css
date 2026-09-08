@@ -31,17 +31,9 @@
 }
 
 .gnauth-toolbar-button {
-    padding: 4px;
-    border-radius: 6px;
-    background-color: rgba(255, 255, 255, 0.08);
-}
-
-.gnauth-toolbar-button:hover {
-    background-color: rgba(255, 255, 255, 0.16);
-}
-
-.gnauth-toolbar-button:active {
-    background-color: rgba(255, 255, 255, 0.24);
+    /* Shape/colors come from the built-in .icon-button class (circular,
+     * theme-adaptive) so it matches other panel-menu icon buttons. Only
+     * override icon size here to keep it compact next to the search box. */
 }
 
 .gnauth-toolbar-button StIcon {

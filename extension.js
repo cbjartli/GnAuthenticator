@@ -214,7 +214,7 @@ const Indicator = GObject.registerClass(
       }
 
       const addButton = new St.Button({
-        style_class: 'gnauth-toolbar-button',
+        style_class: 'gnauth-toolbar-button icon-button',
         icon_name: 'list-add-symbolic',
         can_focus: true,
         track_hover: true,
@@ -224,7 +224,7 @@ const Indicator = GObject.registerClass(
       box.add_child(addButton);
 
       const settingsButton = new St.Button({
-        style_class: 'gnauth-toolbar-button',
+        style_class: 'gnauth-toolbar-button icon-button',
         icon_name: 'preferences-system-symbolic',
         can_focus: true,
         track_hover: true,
