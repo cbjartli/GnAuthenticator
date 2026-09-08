@@ -376,10 +376,60 @@ class AccountsPage extends Adw.PreferencesPage {
     }
 });
 
+/** Small modal dialog that captures a single key combination for a keybinding, GNOME Settings-style. */
+const ShortcutCaptureDialog = GObject.registerClass(
+class ShortcutCaptureDialog extends Adw.Window {
+    _init(parentWindow, onCaptured) {
+        super._init({
+            modal: true,
+            transient_for: parentWindow,
+            title: _('Set Shortcut'),
+            default_width: 380,
+        });
+        this._onCaptured = onCaptured;
+
+        const toolbarView = new Adw.ToolbarView();
+        this.set_content(toolbarView);
+        toolbarView.add_top_bar(new Adw.HeaderBar({ show_title: true }));
+
+        const label = new Gtk.Label({
+            label: _('Enter a new shortcut, or press Escape to cancel'),
+            margin_top: 36,
+            margin_bottom: 36,
+            margin_start: 24,
+            margin_end: 24,
+            wrap: true,
+        });
+        toolbarView.set_content(label);
+
+        const keyController = new Gtk.EventControllerKey();
+        keyController.connect('key-pressed', (_ctrl, keyval, _keycode, state) => {
+            // Only the modifiers relevant to accelerators, matching how GNOME
+            // Settings' own shortcut editor filters the raw event state.
+            const mods = state & Gtk.accelerator_get_default_mod_mask();
+
+            if (keyval === Gdk.KEY_Escape && mods === 0) {
+                this.close();
+                return true;
+            }
+
+            if (!Gtk.accelerator_valid(keyval, mods))
+                return true; // bare modifier press (e.g. Shift) — keep listening
+
+            const accel = Gtk.accelerator_name(keyval, mods);
+            this._onCaptured(accel);
+            this.close();
+            return true;
+        });
+        this.add_controller(keyController);
+    }
+});
+
 const GeneralPage = GObject.registerClass(
 class GeneralPage extends Adw.PreferencesPage {
     _init(settings) {
         super._init({ title: _('General'), icon_name: 'preferences-system-symbolic' });
+        this._settings = settings;
 
         const group = new Adw.PreferencesGroup({ title: _('Behavior') });
         this.add(group);
@@ -394,11 +444,53 @@ class GeneralPage extends Adw.PreferencesPage {
         });
         group.add(clearRow);
 
-        const shortcutGroup = new Adw.PreferencesGroup({
-            title: _('Keyboard Shortcut'),
-            description: _('Default shortcut is Super+Shift+A. Edit the "toggle-overlay" gsettings key under org.gnome.shell.extensions.gnauthenticator to change it.'),
-        });
+        const shortcutGroup = new Adw.PreferencesGroup({ title: _('Keyboard Shortcut') });
         this.add(shortcutGroup);
+
+        this._shortcutRow = new Adw.ActionRow({
+            title: _('Toggle overlay'),
+            subtitle: _('Opens or closes the account list from anywhere'),
+        });
+
+        this._shortcutLabel = new Gtk.ShortcutLabel({
+            disabled_text: _('Disabled'),
+            valign: Gtk.Align.CENTER,
+        });
+        this._shortcutRow.add_suffix(this._shortcutLabel);
+
+        const setButton = new Gtk.Button({
+            label: _('Set Shortcut…'),
+            valign: Gtk.Align.CENTER,
+        });
+        setButton.connect('clicked', () => this._captureShortcut());
+        this._shortcutRow.add_suffix(setButton);
+
+        this._clearButton = new Gtk.Button({
+            icon_name: 'edit-clear-symbolic',
+            valign: Gtk.Align.CENTER,
+            css_classes: ['flat'],
+            tooltip_text: _('Disable shortcut'),
+        });
+        this._clearButton.connect('clicked', () => this._settings.set_strv('toggle-overlay', []));
+        this._shortcutRow.add_suffix(this._clearButton);
+
+        shortcutGroup.add(this._shortcutRow);
+
+        this._settings.connect('changed::toggle-overlay', () => this._syncShortcutDisplay());
+        this._syncShortcutDisplay();
+    }
+
+    _syncShortcutDisplay() {
+        const bindings = this._settings.get_strv('toggle-overlay');
+        this._shortcutLabel.accelerator = bindings[0] ?? '';
+        this._clearButton.sensitive = bindings.length > 0;
+    }
+
+    _captureShortcut() {
+        const dialog = new ShortcutCaptureDialog(this.get_root(), accel => {
+            this._settings.set_strv('toggle-overlay', [accel]);
+        });
+        dialog.present();
     }
 });
 
