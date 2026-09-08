@@ -3,6 +3,7 @@
 
 import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
+import Gdk from 'gi://Gdk';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
@@ -287,27 +288,49 @@ class AccountsPage extends Adw.PreferencesPage {
         const accounts = Store.listAccounts();
         this._rows = [];
 
-        accounts.forEach((account, index) => {
+        accounts.forEach(account => {
             const row = new Adw.ActionRow({
                 title: account.issuer ? `${account.issuer}` : account.label,
                 subtitle: account.issuer ? account.label : `${account.digits} digits · ${account.period}s`,
             });
 
-            const upButton = new Gtk.Button({
-                icon_name: 'go-up-symbolic',
-                css_classes: ['flat'],
-                sensitive: index > 0,
+            const handle = new Gtk.Image({
+                icon_name: 'list-drag-handle-symbolic',
+                css_classes: ['dim-label'],
                 valign: Gtk.Align.CENTER,
             });
-            upButton.connect('clicked', () => this._move(account.id, -1));
+            handle.set_cursor(Gdk.Cursor.new_from_name('grab', null));
 
-            const downButton = new Gtk.Button({
-                icon_name: 'go-down-symbolic',
-                css_classes: ['flat'],
-                sensitive: index < accounts.length - 1,
-                valign: Gtk.Align.CENTER,
+            const dragSource = new Gtk.DragSource({ actions: Gdk.DragAction.MOVE });
+            dragSource.connect('prepare', () => {
+                const value = new GObject.Value();
+                value.init(GObject.TYPE_STRING);
+                value.set_string(account.id);
+                return Gdk.ContentProvider.new_for_value(value);
             });
-            downButton.connect('clicked', () => this._move(account.id, 1));
+            dragSource.connect('drag-begin', (source, drag) => {
+                row.add_css_class('gnauth-dragging');
+                source.set_icon(Gtk.WidgetPaintable.new(row), 0, 0);
+            });
+            dragSource.connect('drag-end', () => row.remove_css_class('gnauth-dragging'));
+            handle.add_controller(dragSource);
+
+            const dropTarget = new Gtk.DropTarget({ actions: Gdk.DragAction.MOVE });
+            dropTarget.set_gtypes([GObject.TYPE_STRING]);
+            dropTarget.connect('enter', () => {
+                row.add_css_class('gnauth-drop-target');
+                return Gdk.DragAction.MOVE;
+            });
+            dropTarget.connect('leave', () => row.remove_css_class('gnauth-drop-target'));
+            dropTarget.connect('drop', (_target, draggedId, _x, y) => {
+                row.remove_css_class('gnauth-drop-target');
+                if (draggedId === account.id)
+                    return false;
+                const before = y < row.get_height() / 2;
+                this._reorderByDrag(draggedId, account.id, before);
+                return true;
+            });
+            row.add_controller(dropTarget);
 
             const removeButton = new Gtk.Button({
                 icon_name: 'user-trash-symbolic',
@@ -316,8 +339,7 @@ class AccountsPage extends Adw.PreferencesPage {
             });
             removeButton.connect('clicked', () => this._confirmRemove(account));
 
-            row.add_suffix(upButton);
-            row.add_suffix(downButton);
+            row.add_prefix(handle);
             row.add_suffix(removeButton);
 
             this._group.add(row);
@@ -325,14 +347,13 @@ class AccountsPage extends Adw.PreferencesPage {
         });
     }
 
-    _move(id, delta) {
+    /** Move `draggedId` to just before (or after) `targetId` in the account order. */
+    _reorderByDrag(draggedId, targetId, before) {
         const accounts = Store.listAccounts();
-        const ids = accounts.map(a => a.id);
-        const idx = ids.indexOf(id);
-        const newIdx = idx + delta;
-        if (newIdx < 0 || newIdx >= ids.length)
-            return;
-        [ids[idx], ids[newIdx]] = [ids[newIdx], ids[idx]];
+        const ids = accounts.map(a => a.id).filter(id => id !== draggedId);
+        const targetIdx = ids.indexOf(targetId);
+        const insertIdx = before ? targetIdx : targetIdx + 1;
+        ids.splice(insertIdx, 0, draggedId);
         Store.reorderAccounts(ids);
         this._refresh();
     }
@@ -383,6 +404,14 @@ class GeneralPage extends Adw.PreferencesPage {
 
 export default class GnAuthenticatorPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
+        const cssProvider = new Gtk.CssProvider();
+        cssProvider.load_from_string(`
+            .gnauth-dragging { opacity: 0.5; }
+            .gnauth-drop-target { box-shadow: inset 0 2px 0 0 @accent_color, inset 0 -2px 0 0 @accent_color; }
+        `);
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(), cssProvider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION);
+
         const settings = this.getSettings();
         const accountsPage = new AccountsPage();
         window.add(accountsPage);
