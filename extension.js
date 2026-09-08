@@ -225,7 +225,7 @@ const Indicator = GObject.registerClass(
 
       const settingsButton = new St.Button({
         style_class: 'gnauth-toolbar-button icon-button',
-        icon_name: 'preferences-system-symbolic',
+        icon_name: 'emblem-system-symbolic',
         can_focus: true,
         track_hover: true,
         accessible_name: _('Settings'),
