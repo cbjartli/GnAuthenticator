@@ -36,8 +36,11 @@ class AddAccountDialog extends Adw.Window {
         super._init({
             modal: true,
             transient_for: parentWindow,
-            default_width: 440,
-            default_height: 420,
+            // Deliberately no default_width/height: leaving these unset lets
+            // GTK size the window to the natural (unscrolled) size of its
+            // content. Adw.ViewStack is size-homogeneous by default, so the
+            // window sizes to fit the *tallest* tab (currently "Manual") and
+            // won't need to scroll or resize when switching tabs.
             title: _('Add Account'),
         });
         this._onAdded = onAdded;
