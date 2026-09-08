@@ -22,8 +22,30 @@
     padding: 0 8px;
 }
 
-.gnauth-search-item {
+.gnauth-toolbar-item {
     padding: 6px 10px;
+}
+
+.gnauth-toolbar-box {
+    spacing: 6px;
+}
+
+.gnauth-toolbar-button {
+    padding: 4px;
+    border-radius: 6px;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.gnauth-toolbar-button:hover {
+    background-color: rgba(255, 255, 255, 0.16);
+}
+
+.gnauth-toolbar-button:active {
+    background-color: rgba(255, 255, 255, 0.24);
+}
+
+.gnauth-toolbar-button StIcon {
+    icon-size: 1em;
 }
 
 .gnauth-progress-track {

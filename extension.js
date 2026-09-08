@@ -123,30 +123,6 @@ class Indicator extends PanelMenu.Button {
         this._tickId = null;
         this._clearClipboardId = null;
 
-        // A small separate context menu for right-click, in line with the
-        // conventional panel-icon UX (left click = primary action/overlay,
-        // right click = a menu with "Settings" etc. — as seen on system tray
-        // icons and other GNOME Shell extensions).
-        this._contextMenu = new PopupMenu.PopupMenu(this, 0.0, St.Side.TOP);
-        this._contextMenu.addAction(_('Settings'), () => this._extensionObject.openPreferences());
-        Main.uiGroup.add_child(this._contextMenu.actor);
-        this._contextMenu.actor.hide();
-        Main.panel.menuManager.addMenu(this._contextMenu);
-
-        // The base PanelMenu.Button click gesture toggles the menu for any
-        // mouse button. Replace it with our own gesture so a right-click
-        // opens the context menu above instead of the accounts overlay.
-        this._clickGesture.set_enabled(false);
-        this._rightClickGesture = new Clutter.ClickGesture();
-        this._rightClickGesture.set_recognize_on_press(true);
-        this._rightClickGesture.connect('recognize', gesture => {
-            if (gesture.get_button() === Clutter.BUTTON_SECONDARY)
-                this._contextMenu.toggle();
-            else
-                this.menu.toggle();
-        });
-        this.add_action(this._rightClickGesture);
-
         this.menu.connect('open-state-changed', (_menu, open) => {
             if (open)
                 this._onOpen();
@@ -183,21 +159,45 @@ class Indicator extends PanelMenu.Button {
 
         const accounts = Store.listAccounts();
 
+        this._addToolbarItem(accounts);
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
         if (accounts.length === 0) {
             const empty = new PopupMenu.PopupMenuItem(
-                _('No accounts yet — add one from Extension Settings'),
+                _('No accounts yet — add one with the + button above'),
                 { reactive: false, can_focus: false }
             );
             this.menu.addMenuItem(empty);
             return;
         }
 
+        for (const account of accounts) {
+            const item = new AccountItem(account, (acct, code) => this._onCopy(acct, code));
+            this.menu.addMenuItem(item);
+            this._items.push(item);
+        }
+    }
+
+    /**
+     * A single toolbar row, always shown at the top of the menu, holding the
+     * (optional) search entry plus small square "+" (add account) and gear
+     * (settings) icon buttons — replacing the old separate right-click menu
+     * and trailing "Settings" text item with something that stays inside the
+     * one overlay menu.
+     */
+    _addToolbarItem(accounts) {
+        const toolbarItem = new PopupMenu.PopupBaseMenuItem({
+            reactive: false,
+            can_focus: false,
+            style_class: 'gnauth-toolbar-item',
+        });
+
+        const box = new St.BoxLayout({
+            x_expand: true,
+            style_class: 'gnauth-toolbar-box',
+        });
+
         if (accounts.length > 5) {
-            const searchItem = new PopupMenu.PopupBaseMenuItem({
-                reactive: false,
-                can_focus: false,
-                style_class: 'gnauth-search-item',
-            });
             const entry = new St.Entry({
                 hint_text: _('Search accounts…'),
                 x_expand: true,
@@ -208,16 +208,44 @@ class Indicator extends PanelMenu.Button {
                 for (const item of this._items)
                     item.setVisibleForQuery(query);
             });
-            searchItem.add_child(entry);
-            this.menu.addMenuItem(searchItem);
-            this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+            box.add_child(entry);
+        } else {
+            box.add_child(new St.Widget({ x_expand: true }));
         }
 
-        for (const account of accounts) {
-            const item = new AccountItem(account, (acct, code) => this._onCopy(acct, code));
-            this.menu.addMenuItem(item);
-            this._items.push(item);
-        }
+        const addButton = new St.Button({
+            style_class: 'gnauth-toolbar-button',
+            icon_name: 'list-add-symbolic',
+            can_focus: true,
+            track_hover: true,
+            accessible_name: _('Add account'),
+        });
+        addButton.connect('clicked', () => this._onAddAccount());
+        box.add_child(addButton);
+
+        const settingsButton = new St.Button({
+            style_class: 'gnauth-toolbar-button',
+            icon_name: 'preferences-system-symbolic',
+            can_focus: true,
+            track_hover: true,
+            accessible_name: _('Settings'),
+        });
+        settingsButton.connect('clicked', () => this._onOpenSettings());
+        box.add_child(settingsButton);
+
+        toolbarItem.add_child(box);
+        this.menu.addMenuItem(toolbarItem);
+    }
+
+    _onAddAccount() {
+        this.menu.close();
+        this._settings.set_boolean('request-add-account', true);
+        this._extensionObject.openPreferences();
+    }
+
+    _onOpenSettings() {
+        this.menu.close();
+        this._extensionObject.openPreferences();
     }
 
     _tick() {
@@ -252,10 +280,6 @@ class Indicator extends PanelMenu.Button {
         if (this._clearClipboardId) {
             GLib.source_remove(this._clearClipboardId);
             this._clearClipboardId = null;
-        }
-        if (this._contextMenu) {
-            this._contextMenu.destroy();
-            this._contextMenu = null;
         }
         super.destroy();
     }

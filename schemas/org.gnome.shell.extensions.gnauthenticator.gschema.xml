@@ -16,5 +16,10 @@
       <summary>Ordered list of account ids</summary>
       <description>Manual display order for accounts (list of account id strings).</description>
     </key>
+    <key name="request-add-account" type="b">
+      <default>false</default>
+      <summary>Request that preferences open straight to the add-account dialog</summary>
+      <description>Set by the panel indicator's "+" button before invoking openPreferences(), since there is no direct argument-passing channel to the separately-spawned preferences process. Reset by the preferences window once handled.</description>
+    </key>
   </schema>
 </schemalist>

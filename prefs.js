@@ -381,8 +381,22 @@ class GeneralPage extends Adw.PreferencesPage {
 export default class GnAuthenticatorPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
-        window.add(new AccountsPage());
+        const accountsPage = new AccountsPage();
+        window.add(accountsPage);
         window.add(new GeneralPage(settings));
         window.set_default_size(560, 640);
+
+        // The panel indicator's "+" button can't pass arguments directly to
+        // this separately-spawned prefs process (OpenExtensionPrefs only
+        // supports a "modal" option), so it sets this flag instead and we
+        // pick it up here to jump straight to the add-account dialog.
+        if (settings.get_boolean('request-add-account')) {
+            settings.set_boolean('request-add-account', false);
+            window.set_visible_page(accountsPage);
+            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                accountsPage._openAddDialog();
+                return GLib.SOURCE_REMOVE;
+            });
+        }
     }
 }
